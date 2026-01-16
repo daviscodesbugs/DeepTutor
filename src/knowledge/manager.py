@@ -50,6 +50,9 @@ class KnowledgeBaseManager:
         """List all available knowledge bases from kb_config.json"""
         kb_list = []
 
+        # Reload config from file to pick up any new KBs added since startup
+        self.config = self._load_config()
+
         # Read knowledge base list from config file (this is the authoritative source)
         config_kbs = self.config.get("knowledge_bases", {})
 
