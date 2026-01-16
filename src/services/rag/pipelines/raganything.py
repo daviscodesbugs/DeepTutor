@@ -5,9 +5,13 @@ RAGAnything Pipeline
 End-to-end pipeline wrapping RAG-Anything for academic document processing.
 """
 
-from pathlib import Path
+import json
+import shutil
 import sys
+from pathlib import Path
 from typing import Any, Dict, List, Optional
+
+from src.utils.pdf_splitter import PDFSplitter
 
 from lightrag.llm.openai import openai_complete_if_cache
 
@@ -189,6 +193,29 @@ class RAGAnythingPipeline:
         self._instances[working_dir] = rag
         return rag
 
+    def _merge_chunk_content(
+        self,
+        chunk_contents: List[List[Dict]],
+        chunk_size: int = PDFSplitter.DEFAULT_CHUNK_SIZE,
+    ) -> List[Dict]:
+        """Merge content from multiple chunks, adjusting page numbers."""
+        merged = []
+
+        for chunk_idx, content_list in enumerate(chunk_contents):
+            page_offset = chunk_idx * chunk_size
+
+            for item in content_list:
+                adjusted_item = item.copy()
+
+                if "page" in adjusted_item:
+                    adjusted_item["page"] += page_offset
+                if "page_number" in adjusted_item:
+                    adjusted_item["page_number"] += page_offset
+
+                merged.append(adjusted_item)
+
+        return merged
+
     async def initialize(
         self,
         kb_name: str,
@@ -239,14 +266,56 @@ class RAGAnythingPipeline:
             # Process files requiring MinerU (PDF, DOCX, images)
             for file_path in classification.needs_mineru:
                 idx += 1
+                path = Path(file_path)
                 self.logger.info(
-                    f"Processing [{idx}/{total_files}] (MinerU): {Path(file_path).name}"
+                    f"Processing [{idx}/{total_files}] (MinerU): {path.name}"
                 )
-                await rag.process_document_complete(
-                    file_path=file_path,
-                    output_dir=str(content_list_dir),
-                    parse_method="auto",
-                )
+
+                # Check if PDF needs splitting due to size
+                if path.suffix.lower() == ".pdf" and PDFSplitter.needs_splitting(path):
+                    page_count = PDFSplitter.get_page_count(path)
+                    num_chunks = (
+                        page_count + PDFSplitter.DEFAULT_CHUNK_SIZE - 1
+                    ) // PDFSplitter.DEFAULT_CHUNK_SIZE
+                    self.logger.info(
+                        f"Large PDF detected ({page_count} pages), splitting into {num_chunks} chunks"
+                    )
+
+                    tmp_dir = kb_dir / ".tmp_chunks" / path.stem
+                    try:
+                        chunk_paths = PDFSplitter.split(path, tmp_dir)
+                        all_chunk_contents: List[List[Dict]] = []
+
+                        for chunk_idx, chunk_path in enumerate(chunk_paths):
+                            self.logger.info(
+                                f"Processing chunk {chunk_idx + 1}/{num_chunks}: {chunk_path.name}"
+                            )
+                            content = await rag.process_document_complete(
+                                file_path=str(chunk_path),
+                                output_dir=str(content_list_dir),
+                                parse_method="auto",
+                            )
+                            if content:
+                                all_chunk_contents.append(content)
+
+                        # Merge chunk content with adjusted page numbers
+                        if all_chunk_contents:
+                            merged_content = self._merge_chunk_content(all_chunk_contents)
+                            merged_file = content_list_dir / f"{path.stem}_merged.json"
+                            with open(merged_file, "w", encoding="utf-8") as f:
+                                json.dump(merged_content, f, ensure_ascii=False, indent=2)
+                            self.logger.info(
+                                f"Merged {len(merged_content)} content items from {num_chunks} chunks"
+                            )
+                    finally:
+                        PDFSplitter.cleanup_chunks(tmp_dir)
+                else:
+                    # Normal processing for small files
+                    await rag.process_document_complete(
+                        file_path=file_path,
+                        output_dir=str(content_list_dir),
+                        parse_method="auto",
+                    )
 
             # Process text files directly (fast path)
             for file_path in classification.text_files:
