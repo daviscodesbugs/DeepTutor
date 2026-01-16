@@ -109,12 +109,19 @@ class LocateAgent(BaseAgent):
                 if isinstance(result, list):
                     knowledge_points = result
                 elif isinstance(result, dict):
+                    # Check if it's a wrapper with knowledge_points/points/data
                     knowledge_points = (
                         result.get("knowledge_points")
                         or result.get("points")
                         or result.get("data")
-                        or []
                     )
+                    # If not a wrapper, check if the dict itself is a knowledge point
+                    if knowledge_points is None:
+                        if "knowledge_title" in result or "knowledge_summary" in result:
+                            # Single knowledge point returned as dict
+                            knowledge_points = [result]
+                        else:
+                            knowledge_points = []
                 else:
                     knowledge_points = []
 

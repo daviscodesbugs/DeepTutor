@@ -26,6 +26,7 @@ class MaterialOrganizerAgent(BaseAgent):
         api_key: str | None = None,
         base_url: str | None = None,
         model: str | None = None,
+        api_version: str | None = None,
     ):
         super().__init__(
             module_name="ideagen",
@@ -33,6 +34,7 @@ class MaterialOrganizerAgent(BaseAgent):
             api_key=api_key,
             base_url=base_url,
             model=model,
+            api_version=api_version,
             language=language,
         )
         self._prompts = get_prompt_manager().load_prompts(

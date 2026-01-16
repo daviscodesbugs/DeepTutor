@@ -27,11 +27,6 @@ interface FileSystemDirectoryReader {
   ): void;
 }
 
-declare global {
-  interface DataTransferItem {
-    webkitGetAsEntry?(): FileSystemEntry | null;
-  }
-}
 import {
   BookOpen,
   Database,
@@ -234,7 +229,7 @@ export default function KnowledgePage() {
 
       if (entry.isFile) {
         return new Promise((resolve) => {
-          (entry as FileSystemFileEntry).file(
+          (entry as unknown as FileSystemFileEntry).file(
             (file) => {
               if (isSupportedFile(file.name)) {
                 resolve([file]);
@@ -246,7 +241,7 @@ export default function KnowledgePage() {
           );
         });
       } else if (entry.isDirectory) {
-        return readDirectoryRecursively(entry as FileSystemDirectoryEntry);
+        return readDirectoryRecursively(entry as unknown as FileSystemDirectoryEntry);
       }
       return [];
     };
