@@ -3,6 +3,14 @@
 """
 ResearchPipeline 2.0 - Research workflow based on dynamic topic queue
 Coordinates three stages: Planning -> Researching -> Reporting
+
+TODO: Add resume capability to the pipeline
+- Accept an existing research_id to resume interrupted research
+- Load queue state from queue_progress.json
+- Skip blocks marked as completed
+- Resume from first pending block
+- All progress data is already persisted (queue_progress.json, researching_progress.json,
+  citations, tool traces) - just need resume logic in __init__() and run()
 """
 
 import asyncio

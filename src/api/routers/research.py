@@ -76,6 +76,15 @@ async def optimize_topic(request: OptimizeRequest):
 
 @router.websocket("/run")
 async def websocket_research_run(websocket: WebSocket):
+    # TODO: Add graceful shutdown to prevent hung research tasks
+    # Currently, if the WebSocket disconnects (browser closed, network issue), the pipeline
+    # continues running as an orphaned task until it eventually dies silently.
+    # Fix needed:
+    # 1. Wrap pipeline.run() in asyncio.create_task() and store reference
+    # 2. Add WebSocket disconnect detection (try/except on receive, or use starlette events)
+    # 3. Cancel the pipeline task on disconnect with task.cancel()
+    # 4. Add asyncio.wait_for() timeouts on LLM calls in NoteAgent._generate_summary()
+    # 5. Consider using asyncio.shield() for critical save operations
     await websocket.accept()
 
     # Get task ID manager
