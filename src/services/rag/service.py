@@ -171,6 +171,54 @@ class RAGService:
             )
             return self.provider
 
+    async def add_documents(
+        self, kb_name: str, file_paths: List[str], **kwargs
+    ) -> List[str]:
+        """
+        Add documents to an existing knowledge base.
+
+        Args:
+            kb_name: Knowledge base name
+            file_paths: List of file paths to add
+            **kwargs: Additional arguments passed to pipeline
+
+        Returns:
+            List of successfully processed file names
+
+        Example:
+            service = RAGService()
+            processed = await service.add_documents("my_kb", ["new_doc.pdf"])
+        """
+        # Get the provider from KB metadata
+        provider = self._get_provider_for_kb(kb_name)
+
+        self.logger.info(
+            f"Adding {len(file_paths)} documents to KB '{kb_name}' with provider '{provider}'"
+        )
+
+        # Get pipeline for the specific provider
+        from .factory import get_pipeline
+
+        pipeline = get_pipeline(provider, kb_base_dir=self.kb_base_dir)
+
+        # Check if pipeline supports add_documents
+        if hasattr(pipeline, "add_documents"):
+            return await pipeline.add_documents(
+                kb_name=kb_name, file_paths=file_paths, **kwargs
+            )
+        else:
+            # Fallback: re-initialize with all files (existing + new)
+            self.logger.warning(
+                f"Pipeline '{provider}' doesn't support add_documents, "
+                "falling back to re-initialization"
+            )
+            # Get existing files from raw directory
+            kb_dir = Path(self.kb_base_dir) / kb_name / "raw"
+            existing_files = [str(f) for f in kb_dir.glob("*") if f.is_file()]
+            all_files = existing_files + file_paths
+            success = await pipeline.initialize(kb_name=kb_name, file_paths=all_files, **kwargs)
+            return [Path(f).name for f in file_paths] if success else []
+
     async def delete(self, kb_name: str) -> bool:
         """
         Delete a knowledge base.

@@ -39,6 +39,7 @@ sys.path.insert(0, str(_project_root))
 from src.logging import get_logger
 from src.services.config import load_config_with_main
 from src.services.llm import get_llm_config
+from src.services.rag.service import RAGService
 
 # Initialize logger with config
 project_root = Path(__file__).parent.parent.parent.parent
@@ -135,6 +136,21 @@ async def run_initialization_task(initializer: KnowledgeBaseInitializer):
             )
 
 
+def _get_kb_provider(kb_name: str, base_dir: str) -> str:
+    """Get RAG provider from KB metadata."""
+    import json
+
+    metadata_file = Path(base_dir) / kb_name / "metadata.json"
+    if metadata_file.exists():
+        try:
+            with open(metadata_file, encoding="utf-8") as f:
+                metadata = json.load(f)
+                return metadata.get("rag_provider", "raganything")
+        except Exception:
+            pass
+    return "raganything"
+
+
 async def run_upload_processing_task(
     kb_name: str,
     base_dir: str,
@@ -160,28 +176,42 @@ async def run_upload_processing_task(
             total=len(uploaded_file_paths),
         )
 
-        adder = DocumentAdder(
-            kb_name=kb_name,
-            base_dir=base_dir,
-            api_key=api_key,
-            base_url=base_url,
-            progress_tracker=progress_tracker,
-            rag_provider=rag_provider,
-        )
+        # Get provider from metadata if not specified
+        provider = rag_provider or _get_kb_provider(kb_name, base_dir)
+        logger.info(f"[{task_id}] Using RAG provider: {provider}")
 
-        new_files = [Path(path) for path in uploaded_file_paths]
-        processed_files = await adder.process_new_documents(new_files)
-
-        if processed_files:
-            progress_tracker.update(
-                ProgressStage.EXTRACTING_ITEMS,
-                "Extracting numbered items...",
-                current=0,
-                total=len(processed_files),
+        # Use RAGService for providers that support it (llamaindex)
+        if provider == "llamaindex":
+            rag_service = RAGService(kb_base_dir=base_dir, provider=provider)
+            processed_files = await rag_service.add_documents(
+                kb_name=kb_name, file_paths=uploaded_file_paths
             )
-            adder.extract_numbered_items_for_new_docs(processed_files, batch_size=20)
+            # Update metadata timestamp
+            _update_kb_metadata(kb_name, base_dir, len(processed_files))
+        else:
+            # Fall back to DocumentAdder for raganything
+            adder = DocumentAdder(
+                kb_name=kb_name,
+                base_dir=base_dir,
+                api_key=api_key,
+                base_url=base_url,
+                progress_tracker=progress_tracker,
+                rag_provider=rag_provider,
+            )
 
-        adder.update_metadata(len(new_files))
+            new_files = [Path(path) for path in uploaded_file_paths]
+            processed_files = await adder.process_new_documents(new_files)
+
+            if processed_files:
+                progress_tracker.update(
+                    ProgressStage.EXTRACTING_ITEMS,
+                    "Extracting numbered items...",
+                    current=0,
+                    total=len(processed_files),
+                )
+                adder.extract_numbered_items_for_new_docs(processed_files, batch_size=20)
+
+            adder.update_metadata(len(new_files))
 
         progress_tracker.update(
             ProgressStage.COMPLETED,
@@ -201,6 +231,35 @@ async def run_upload_processing_task(
         progress_tracker.update(
             ProgressStage.ERROR, f"Processing failed: {error_msg}", error=error_msg
         )
+
+
+def _update_kb_metadata(kb_name: str, base_dir: str, added_count: int):
+    """Update KB metadata after successful upload (for RAGService path)."""
+    import json
+    from datetime import datetime
+
+    metadata_file = Path(base_dir) / kb_name / "metadata.json"
+    if not metadata_file.exists():
+        return
+
+    try:
+        with open(metadata_file, "r", encoding="utf-8") as f:
+            metadata = json.load(f)
+
+        metadata["last_updated"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+        history = metadata.get("update_history", [])
+        history.append({
+            "timestamp": metadata["last_updated"],
+            "action": "incremental_add",
+            "count": added_count,
+        })
+        metadata["update_history"] = history
+
+        with open(metadata_file, "w", encoding="utf-8") as f:
+            json.dump(metadata, f, indent=2, ensure_ascii=False)
+    except Exception as e:
+        logger.warning(f"Metadata update failed: {e}")
 
 
 @router.get("/health")

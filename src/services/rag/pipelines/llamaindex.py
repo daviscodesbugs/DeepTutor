@@ -212,6 +212,90 @@ class LlamaIndexPipeline:
             self.logger.error(f"Failed to extract PDF text: {e}")
             return ""
 
+    async def add_documents(
+        self, kb_name: str, file_paths: List[str], **kwargs
+    ) -> List[str]:
+        """
+        Add documents to an existing KB.
+
+        Args:
+            kb_name: Knowledge base name
+            file_paths: List of file paths to add
+            **kwargs: Additional arguments
+
+        Returns:
+            List of successfully processed file names
+        """
+        self.logger.info(
+            f"Adding {len(file_paths)} documents to KB '{kb_name}' using LlamaIndex"
+        )
+
+        kb_dir = Path(self.kb_base_dir) / kb_name
+        storage_dir = kb_dir / "llamaindex_storage"
+
+        if not storage_dir.exists():
+            self.logger.error(f"KB '{kb_name}' not initialized - no storage found")
+            return []
+
+        try:
+            # Load existing index
+            self.logger.info("Loading existing index...")
+            loop = asyncio.get_event_loop()
+
+            def load_index():
+                storage_context = StorageContext.from_defaults(persist_dir=str(storage_dir))
+                return load_index_from_storage(storage_context)
+
+            index = await loop.run_in_executor(None, load_index)
+
+            # Parse new documents
+            processed_files = []
+            for file_path in file_paths:
+                file_path = Path(file_path)
+                self.logger.info(f"Parsing: {file_path.name}")
+
+                # Extract text based on file type
+                if file_path.suffix.lower() == ".pdf":
+                    text = self._extract_pdf_text(file_path)
+                else:
+                    with open(file_path, "r", encoding="utf-8") as f:
+                        text = f.read()
+
+                if text.strip():
+                    doc = Document(
+                        text=text,
+                        metadata={
+                            "file_name": file_path.name,
+                            "file_path": str(file_path),
+                        },
+                    )
+
+                    # Insert document into existing index
+                    self.logger.info(f"Inserting: {file_path.name} ({len(text)} chars)")
+                    await loop.run_in_executor(None, lambda d=doc: index.insert(d))
+                    processed_files.append(file_path.name)
+                else:
+                    self.logger.warning(f"Skipped empty document: {file_path.name}")
+
+            # Persist updated index
+            if processed_files:
+                self.logger.info("Persisting updated index...")
+                await loop.run_in_executor(
+                    None, lambda: index.storage_context.persist(persist_dir=str(storage_dir))
+                )
+                self.logger.info(
+                    f"Successfully added {len(processed_files)} documents to KB '{kb_name}'"
+                )
+
+            return processed_files
+
+        except Exception as e:
+            self.logger.error(f"Failed to add documents: {e}")
+            import traceback
+
+            self.logger.error(traceback.format_exc())
+            return []
+
     async def search(
         self,
         query: str,
