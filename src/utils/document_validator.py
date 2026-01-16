@@ -16,8 +16,8 @@ class DocumentValidator:
     # Maximum file size in bytes (100MB)
     MAX_FILE_SIZE: ClassVar[int] = 100 * 1024 * 1024
 
-    # Maximum file size for PDF processing (50MB to prevent resource exhaustion)
-    MAX_PDF_SIZE: ClassVar[int] = 50 * 1024 * 1024
+    # Maximum file size for PDF processing (100MB - requires adequate shared memory)
+    MAX_PDF_SIZE: ClassVar[int] = 100 * 1024 * 1024
 
     # Allowed file extensions
     ALLOWED_EXTENSIONS: ClassVar[set[str]] = {

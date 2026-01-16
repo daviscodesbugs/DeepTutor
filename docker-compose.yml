@@ -27,6 +27,7 @@ services:
         - BACKEND_PORT=${BACKEND_PORT:-8001}
     container_name: deeptutor
     restart: unless-stopped
+    shm_size: '2gb'  # Increase shared memory for MinerU process pools
     ports:
       - "${BACKEND_PORT:-8001}:${BACKEND_PORT:-8001}"
       - "${FRONTEND_PORT:-3782}:${FRONTEND_PORT:-3782}"
