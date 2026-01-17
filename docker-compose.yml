@@ -28,6 +28,13 @@ services:
     container_name: deeptutor
     restart: unless-stopped
     shm_size: '2gb'  # Increase shared memory for MinerU process pools
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
     ports:
       - "${BACKEND_PORT:-8001}:${BACKEND_PORT:-8001}"
       - "${FRONTEND_PORT:-3782}:${FRONTEND_PORT:-3782}"
@@ -37,6 +44,13 @@ services:
       - .env
 
     environment:
+      # PyTorch CUDA memory optimization
+      - PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
+      # MinerU Configuration (for RAGAnything pipeline)
+      # Backend options: pipeline (lighter), vlm-auto-engine, hybrid-auto-engine (heaviest)
+      - MINERU_BACKEND=${MINERU_BACKEND:-pipeline}
+      # Device options: cpu, cuda, cuda:0 (only works with pipeline backend)
+      - MINERU_DEVICE=${MINERU_DEVICE:-}
       # LLM Configuration (Required)
       - LLM_BINDING=${LLM_BINDING:-openai}
       - LLM_MODEL=${LLM_MODEL}

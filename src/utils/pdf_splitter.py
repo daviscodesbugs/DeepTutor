@@ -26,7 +26,7 @@ class PDFSplitError(Exception):
 class PDFSplitter:
     """Utility for splitting large PDFs into manageable chunks."""
 
-    DEFAULT_CHUNK_SIZE = 50  # pages per chunk
+    DEFAULT_CHUNK_SIZE = 25  # pages per chunk
 
     @staticmethod
     def get_page_count(pdf_path: Path) -> int:

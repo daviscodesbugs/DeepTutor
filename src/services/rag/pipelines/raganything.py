@@ -6,6 +6,7 @@ End-to-end pipeline wrapping RAG-Anything for academic document processing.
 """
 
 import json
+import os
 import shutil
 import sys
 from pathlib import Path
@@ -39,6 +40,8 @@ class RAGAnythingPipeline:
         enable_image_processing: bool = True,
         enable_table_processing: bool = True,
         enable_equation_processing: bool = True,
+        mineru_backend: Optional[str] = None,
+        mineru_device: Optional[str] = None,
     ):
         """
         Initialize RAGAnything pipeline.
@@ -48,6 +51,8 @@ class RAGAnythingPipeline:
             enable_image_processing: Enable image extraction and processing
             enable_table_processing: Enable table extraction and processing
             enable_equation_processing: Enable equation extraction and processing
+            mineru_backend: MinerU backend (pipeline, vlm-auto-engine, hybrid-auto-engine)
+            mineru_device: MinerU device (cpu, cuda, cuda:0, etc.) - only for pipeline backend
         """
         self.logger = get_logger("RAGAnythingPipeline")
         self.kb_base_dir = kb_base_dir or str(
@@ -56,6 +61,9 @@ class RAGAnythingPipeline:
         self.enable_image = enable_image_processing
         self.enable_table = enable_table_processing
         self.enable_equation = enable_equation_processing
+        # MinerU config: support env vars MINERU_BACKEND and MINERU_DEVICE
+        self.mineru_backend = mineru_backend or os.environ.get("MINERU_BACKEND")
+        self.mineru_device = mineru_device or os.environ.get("MINERU_DEVICE")
         self._instances: Dict[str, Any] = {}
 
     def _setup_raganything_path(self):
@@ -193,6 +201,15 @@ class RAGAnythingPipeline:
         self._instances[working_dir] = rag
         return rag
 
+    def _get_mineru_kwargs(self) -> Dict[str, Any]:
+        """Build MinerU kwargs from config."""
+        kwargs = {}
+        if self.mineru_backend:
+            kwargs["backend"] = self.mineru_backend
+        if self.mineru_device:
+            kwargs["device"] = self.mineru_device
+        return kwargs
+
     def _merge_chunk_content(
         self,
         chunk_contents: List[List[Dict]],
@@ -294,6 +311,7 @@ class RAGAnythingPipeline:
                                 file_path=str(chunk_path),
                                 output_dir=str(content_list_dir),
                                 parse_method="auto",
+                                **self._get_mineru_kwargs(),
                             )
                             if content:
                                 all_chunk_contents.append(content)
@@ -315,6 +333,7 @@ class RAGAnythingPipeline:
                         file_path=file_path,
                         output_dir=str(content_list_dir),
                         parse_method="auto",
+                        **self._get_mineru_kwargs(),
                     )
 
             # Process text files directly (fast path)
